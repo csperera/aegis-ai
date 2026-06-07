@@ -118,6 +118,7 @@ The pipeline starts automatically as a background thread.
 ---
 
 ## 📁 Project Structure
+```
 aegis-ai/
 ├── backend/
 │   ├── agents/
@@ -144,6 +145,7 @@ aegis-ai/
 │   ├── 01_preprocess.py          # Data preprocessing
 │   └── 02_train_model.py         # Model training
 └── requirements.txt
+```
 
 ---
 

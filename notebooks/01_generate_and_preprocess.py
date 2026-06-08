@@ -78,7 +78,25 @@ def make_events(family, n):
         "attack_family":   [family] * n,
         "is_attack":       [int(is_attack)] * n,
     }
-    return pd.DataFrame(rows)
+
+    df = pd.DataFrame(rows)
+
+    # Add realistic noise to numeric features to prevent perfect class
+    # separation — ensures XGBoost outputs probability distributions
+    # rather than binary 0/1 scores
+    META_COLS = {"Source IP", "Destination IP", "Source Port",
+                 "Destination Port", "Protocol", "Label",
+                 "attack_family", "is_attack"}
+    numeric_cols = [c for c in df.columns
+                    if c not in META_COLS and df[c].dtype in [np.float64, np.int64]]
+    for col in numeric_cols:
+        std = df[col].std()
+        if std > 0:
+            df[col] = df[col] + np.random.normal(0, std * 0.25, n)
+            df[col] = df[col].clip(lower=0)  # prevent negative values
+
+    return df
+
 
 # --- Build dataset ---
 dfs = []

@@ -2,12 +2,10 @@ services:
   - type: web
     name: aegisai
     runtime: python
-    buildCommand: "pip install -r requirements.txt && bash build.sh"
+    buildCommand: "pip install --upgrade pip setuptools && pip install -r requirements.txt && bash build.sh"
     startCommand: "bash start.sh"
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.0"
       - key: PROCESSED_DATA_PATH
-        value: data/processed/cicids_clean.parquet
+        value: /data/cicids_clean.parquet
       - key: STREAM_RATE
         value: 1

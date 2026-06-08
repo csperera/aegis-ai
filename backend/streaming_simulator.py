@@ -47,7 +47,11 @@ def run_pipeline():
     expl_agent   = ExplanationAgent()
 
     while True:  # loop forever for continuous streaming
-        df_shuffled = df.sample(frac=1, random_state=processed).reset_index(drop=True)
+        # Front-load attack traffic so dashboard always shows
+        # CRITICAL/HIGH events within the first 100 events
+        df_attack   = df[df["is_attack"] == 1].sample(frac=1, random_state=processed)
+        df_benign   = df[df["is_attack"] == 0].sample(frac=1, random_state=processed)
+        df_shuffled = pd.concat([df_attack, df_benign]).reset_index(drop=True)
 
         for _, row in df_shuffled.iterrows():
             event = row_to_event(row, feature_cols)

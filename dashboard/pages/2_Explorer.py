@@ -28,7 +28,8 @@ st.markdown("""
 REFRESH_INTERVAL = 5
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
-now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+from datetime import timezone
+now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 col_title, col_status = st.columns([4, 1])
 with col_title:
     st.markdown("## 🔍 AegisAI | Event Explorer")

@@ -32,7 +32,7 @@ flows through four specialized agents before reaching the real-time dashboard.
 
 arch_path = Path(__file__).parent.parent.parent / "dashboard" / "architecture.png"
 if arch_path.exists():
-    st.image(str(arch_path), use_column_width=True)
+    st.image(str(arch_path), width=1200)
 else:
     st.warning("Architecture diagram not found. Place `architecture.png` in the `dashboard/` folder.")
 

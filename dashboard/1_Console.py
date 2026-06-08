@@ -12,7 +12,7 @@ from backend.core.event_store import event_store
 from dashboard.components.charts import severity_donut, attack_family_bar, severity_trend
 
 st.set_page_config(
-    page_title="AegisAI | Overview",
+    page_title="AegisAI — Console",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -47,60 +47,105 @@ def compute_risk_index(events):
     return min(total / max(len(events), 1), 10.0)
 
 
-placeholder = st.empty()
+# ── HEADER ────────────────────────────────────────────────────────────────────
+from datetime import timezone
+now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+col_title, col_status = st.columns([4, 1])
+with col_title:
+    st.markdown("## 🛡️ AegisAI — Real-Time Threat Console")
+with col_status:
+    st.markdown(f"🟢 **Live** | `{now}`")
 
-while True:
-    events = event_store.get_recent(500)
-    now    = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+# ── FETCH EVENTS ──────────────────────────────────────────────────────────────
+events = event_store.get_recent(500)
 
-    with placeholder.container():
-
-        # ── HEADER ────────────────────────────────────────────────────────
-        col_title, col_status = st.columns([4, 1])
-        with col_title:
-            st.markdown("## 🛡️ AegisAI | Real-Time Threat Console")
-        with col_status:
-            st.markdown(f"🟢 **Live** | `{now}`")
-
-        if not events:
-            st.info("⏳ Pipeline starting up, first events arriving soon...")
-            time.sleep(REFRESH_INTERVAL)
-            continue
-
-        # ── KPIs ──────────────────────────────────────────────────────────
-        suspicious = [e for e in events if e.get("is_suspicious")]
-        critical   = [e for e in events if e.get("severity") == "CRITICAL"]
-        high       = [e for e in events if e.get("severity") == "HIGH"]
-        risk_idx   = compute_risk_index(events)
-
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("📊 Total Events",  len(events))
-        k2.metric("⚠️ Suspicious",    len(suspicious))
-        k3.metric("🔴 Critical",      len(critical), delta=f"+{len(high)} HIGH")
-        k4.metric("🧠 Risk Index",    f"{risk_idx:.1f}/10")
-
-        st.divider()
-
-        # ── CHARTS ────────────────────────────────────────────────────────
-        c1, c2 = st.columns([1, 1.5])
-        with c1:
-            st.subheader("Severity Distribution")
-            st.plotly_chart(severity_donut(events), use_container_width=True, key="donut")
-        with c2:
-            st.subheader("Attack Families")
-            st.plotly_chart(attack_family_bar(events), use_container_width=True, key="bar")
-
-        st.subheader("Threat Trend (last 10 min)")
-        st.plotly_chart(severity_trend(events), use_container_width=True, key="trend") 
-
-        # ── LIVE EVENT FEED ───────────────────────────────────────────────
-        st.subheader("📡 Live Event Feed")
-        df = pd.DataFrame(events[:50])
-        if not df.empty:
-            display_cols = ["timestamp", "severity", "attack_family",
-                            "src_ip", "dst_ip", "risk_score",
-                            "triage_decision", "analyst_summary"]
-            display_cols = [c for c in display_cols if c in df.columns]
-            st.dataframe(df[display_cols], use_container_width=True, height=350)
-
+if not events:
+    st.info("⏳ Pipeline starting up, first events arriving soon...")
     time.sleep(REFRESH_INTERVAL)
+    st.rerun()
+
+# ── KPIs ──────────────────────────────────────────────────────────────────────
+suspicious = [e for e in events if e.get("is_suspicious")]
+critical   = [e for e in events if e.get("severity") == "CRITICAL"]
+high       = [e for e in events if e.get("severity") == "HIGH"]
+risk_idx   = compute_risk_index(events)
+
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("📊 Total Events",  len(events))
+k2.metric("⚠️ Suspicious",    len(suspicious))
+k3.metric("🔴 Critical",      len(critical), delta=f"+{len(high)} HIGH")
+k4.metric("🧠 Risk Index",    f"{risk_idx:.1f}/10")
+
+st.divider()
+
+# ── CHARTS ────────────────────────────────────────────────────────────────────
+c1, c2 = st.columns([1, 1.5])
+with c1:
+    st.subheader("Severity Distribution")
+    st.plotly_chart(severity_donut(events), width='stretch', key="donut")
+with c2:
+    st.subheader("Attack Families")
+    st.plotly_chart(attack_family_bar(events), width='stretch', key="bar")
+
+st.subheader("Threat Trend (last 10 min)")
+st.plotly_chart(severity_trend(events), width='stretch', key="trend")
+
+# ── LIVE EVENT FEED ───────────────────────────────────────────────────────────
+st.subheader("📡 Live Event Feed")
+df = pd.DataFrame(events[:50])
+if not df.empty:
+    display_cols = ["timestamp", "severity", "attack_family",
+                    "src_ip", "dst_ip", "risk_score",
+                    "triage_decision", "analyst_summary"]
+    display_cols = [c for c in display_cols if c in df.columns]
+    st.dataframe(df[display_cols], use_container_width=True, height=350)
+
+st.divider()
+
+# ── EVENT DETAIL ──────────────────────────────────────────────────────────────
+st.subheader("🔍 Event Detail")
+if events:
+    event_labels = [
+        f"[{events[i].get('severity','?')}] "
+        f"{events[i]['event_id'][:16]}... — "
+        f"{events[i].get('attack_family','?')}"
+        for i in range(min(20, len(events)))
+    ]
+
+    selected_idx = st.selectbox(
+        "Select event",
+        range(len(event_labels)),
+        format_func=lambda i: event_labels[i],
+        key="event_detail_select",
+    )
+
+    evt = events[selected_idx]
+
+    d1, d2, d3 = st.columns(3)
+    d1.markdown(f"**Severity:** `{evt.get('severity')}`")
+    d1.markdown(f"**Decision:** `{evt.get('triage_decision')}`")
+    d1.markdown(f"**Risk Score:** `{evt.get('risk_score', 0):.3f}`")
+    d2.markdown(f"**Source:** `{evt.get('src_ip')}:{evt.get('src_port')}`")
+    d2.markdown(f"**Dest:** `{evt.get('dst_ip')}:{evt.get('dst_port')}`")
+    d2.markdown(f"**Protocol:** `{evt.get('protocol')}`")
+    d3.markdown(f"**Attack Family:** `{evt.get('attack_family')}`")
+    d3.markdown(f"**Confidence:** `{evt.get('confidence', 0):.2f}`")
+    d3.markdown(f"**Model:** `{evt.get('model_version')}`")
+
+    st.markdown("**📝 Explanation**")
+    st.info(evt.get("llm_explanation") or evt.get("attack_hypothesis") or "N/A")
+
+    st.markdown("**✅ Recommended Action**")
+    st.success(evt.get("recommended_action") or "N/A")
+
+    st.markdown("**🔎 Reasoning Trace**")
+    trace = [t for t in (evt.get("reasoning_trace", []) or []) if t and t != "N/A"]
+    if trace:
+        for t in trace:
+            st.markdown(f"- {t}")
+    else:
+        st.markdown("- No reasoning trace available")
+
+# ── AUTO REFRESH ──────────────────────────────────────────────────────────────
+time.sleep(REFRESH_INTERVAL)
+st.rerun()

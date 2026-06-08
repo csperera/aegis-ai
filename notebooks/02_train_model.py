@@ -10,7 +10,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, roc_auc_score
 import xgboost as xgb
 
-DATA_PATH = Path("data/processed/cicids_clean.parquet")
+import os
+DATA_PATH = Path(os.getenv("PROCESSED_DATA_PATH", "data/processed/cicids_clean.parquet"))
 SCALER_PATH = Path("models/scaler.pkl")
 MODEL_PATH = Path("models/xgb_model.json")
 

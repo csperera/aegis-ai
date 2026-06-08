@@ -75,7 +75,11 @@ if filtered:
                     "src_ip", "dst_ip", "risk_score",
                     "triage_decision", "analyst_summary"]
     display_cols = [c for c in display_cols if c in df.columns]
-    st.dataframe(df[display_cols], width='stretch', height=350)
+    st.dataframe(
+    df[display_cols].style.format({"risk_score": "{:.4f}"}),
+    use_container_width=True,
+    height=350
+    )
 else:
     st.warning("No events match the selected filters.")
 

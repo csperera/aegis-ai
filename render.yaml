@@ -2,6 +2,7 @@ services:
   - type: web
     name: aegisai
     runtime: python
+    pythonVersion: "3.11.0"
     buildCommand: "pip install -r requirements.txt && bash build.sh"
     startCommand: "bash start.sh"
     envVars:
@@ -9,5 +10,3 @@ services:
         value: data/processed/cicids_clean.parquet
       - key: STREAM_RATE
         value: 5
-      - key: PYTHON_VERSION
-        value: 3.11.0

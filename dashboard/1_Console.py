@@ -85,13 +85,13 @@ while True:
         c1, c2 = st.columns([1, 1.5])
         with c1:
             st.subheader("Severity Distribution")
-            st.plotly_chart(severity_donut(events), use_container_width=True)
+            st.plotly_chart(severity_donut(events), use_container_width=True, key="donut")
         with c2:
             st.subheader("Attack Families")
-            st.plotly_chart(attack_family_bar(events), use_container_width=True)
+            st.plotly_chart(attack_family_bar(events), use_container_width=True, key="bar")
 
         st.subheader("Threat Trend (last 10 min)")
-        st.plotly_chart(severity_trend(events), use_container_width=True)
+        st.plotly_chart(severity_trend(events), use_container_width=True, key="trend") 
 
         # ── LIVE EVENT FEED ───────────────────────────────────────────────
         st.subheader("📡 Live Event Feed")

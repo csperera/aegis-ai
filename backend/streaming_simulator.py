@@ -21,7 +21,7 @@ def load_feature_names():
         return json.load(f)
 
 
-def row_to_event(row: pd.Series, feature_cols: list) -> ThreatEvent:
+def row_to_event(row, feature_cols: list) -> ThreatEvent:
     features = {col: float(row.get(col, 0.0)) for col in feature_cols}
     return ThreatEvent(
         src_ip        = str(row.get("Source IP",        f"10.0.{random.randint(0,255)}.{random.randint(1,254)}")),
@@ -46,18 +46,29 @@ def run_pipeline():
     triage_agent = TriageAgent()
     expl_agent   = ExplanationAgent()
 
-    while True:  # loop forever for continuous streaming
-        # Front-load attack traffic so dashboard always shows
-        # CRITICAL/HIGH events within the first 100 events
+    while True:
+        # Interleave attack and benign for realistic ~30% attack rate
         df_attack   = df[df["is_attack"] == 1].sample(frac=1, random_state=processed)
         df_benign   = df[df["is_attack"] == 0].sample(frac=1, random_state=processed)
-        df_shuffled = pd.concat([df_attack, df_benign]).reset_index(drop=True)
+
+        attack_list = df_attack.to_dict("records")
+        benign_list = df_benign.to_dict("records")
+
+        interleaved = []
+        a, b = 0, 0
+        for i in range(len(df)):
+            if i % 3 == 0 and a < len(attack_list):
+                interleaved.append(attack_list[a]); a += 1
+            elif b < len(benign_list):
+                interleaved.append(benign_list[b]); b += 1
+
+        df_shuffled = pd.DataFrame(interleaved)
 
         for _, row in df_shuffled.iterrows():
             event = row_to_event(row, feature_cols)
             event = pred_agent.run(event)
             event = triage_agent.run(event)
-            event = expl_agent.run(event)  # always run — zero API cost
+            event = expl_agent.run(event)
 
             event_store.add(event)
             processed += 1

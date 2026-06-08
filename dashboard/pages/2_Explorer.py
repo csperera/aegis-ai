@@ -37,7 +37,7 @@ with col_status:
     st.markdown(f"🟢 **Live** | `{now}`")
 
 # ── FETCH EVENTS ──────────────────────────────────────────────────────────────
-events = event_store.get_recent(500)
+events = event_store.get_recent(100)
 
 if not events:
     st.info("⏳ Waiting for events from the pipeline...")
@@ -75,7 +75,7 @@ if filtered:
                     "src_ip", "dst_ip", "risk_score",
                     "triage_decision", "analyst_summary"]
     display_cols = [c for c in display_cols if c in df.columns]
-    st.dataframe(df[display_cols], use_container_width=True, height=350)
+    st.dataframe(df[display_cols], width='stretch', height=350)
 else:
     st.warning("No events match the selected filters.")
 

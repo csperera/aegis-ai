@@ -9,7 +9,7 @@ from backend.core.schema import ThreatEvent
 
 
 class EventStore:
-    def __init__(self, maxlen: int = 1000):
+    def __init__(self, maxlen: int = 200):
         self._store: deque[dict] = deque(maxlen=maxlen)
         self._lock = Lock()
 

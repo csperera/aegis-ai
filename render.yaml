@@ -10,4 +10,4 @@ services:
       - key: PROCESSED_DATA_PATH
         value: data/processed/cicids_clean.parquet
       - key: STREAM_RATE
-        value: 5
+        value: 1

@@ -2,4 +2,7 @@
 echo "Generating synthetic dataset..."
 python notebooks/01_generate_and_preprocess.py
 
-echo "Build complete — model files pre-trained, synthetic data generated."
+echo "Training model on fresh data..."
+python notebooks/02_train_model.py
+
+echo "Build complete."

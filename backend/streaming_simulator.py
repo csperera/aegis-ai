@@ -15,6 +15,9 @@ DATA_PATH     = Path(os.getenv("PROCESSED_DATA_PATH", "data/processed/cicids_cle
 STREAM_RATE   = int(os.getenv("STREAM_RATE", 5))
 FEATURES_PATH = Path("models/feature_names.json")
 
+# Memory budget for Render 512MB Starter tier
+DEMO_SAMPLE_SIZE = 5000
+
 
 def load_feature_names():
     with open(FEATURES_PATH) as f:
@@ -38,7 +41,13 @@ def row_to_event(row, feature_cols: list) -> ThreatEvent:
 def run_pipeline():
     print("🚀 AegisAI pipeline starting...")
     feature_cols = load_feature_names()
-    df           = pd.read_parquet(DATA_PATH)
+
+    print(f"  Loading dataset and sampling {DEMO_SAMPLE_SIZE} rows...")
+    df = pd.read_parquet(DATA_PATH).sample(
+        n=DEMO_SAMPLE_SIZE, random_state=42
+    ).reset_index(drop=True)
+    print(f"  Dataset ready: {len(df):,} rows")
+
     processed    = 0
     delay        = 1.0 / STREAM_RATE
 

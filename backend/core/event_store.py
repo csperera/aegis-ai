@@ -26,4 +26,4 @@ class EventStore:
 
 
 # Module-level singleton — shared between pipeline and dashboard
-event_store = EventStore(maxlen=500)
+event_store = EventStore(maxlen=500)    

@@ -1,4 +1,4 @@
-import os, time, json, random
+import os, time, json, random, gc
 from pathlib import Path
 from dotenv import load_dotenv
 import pandas as pd
@@ -38,6 +38,34 @@ def row_to_event(row, feature_cols: list) -> ThreatEvent:
     )
 
 
+def event_generator(df: pd.DataFrame, feature_cols: list):
+    """
+    Generator that yields one event at a time in an infinite loop.
+    Interleaves attack and benign at ~30% attack rate.
+    Zero memory accumulation — no pre-built lists.
+    """
+    attack_idx = df[df["is_attack"] == 1].index.tolist()
+    benign_idx = df[df["is_attack"] == 0].index.tolist()
+
+    while True:
+        random.shuffle(attack_idx)
+        random.shuffle(benign_idx)
+
+        a, b = 0, 0
+        i = 0
+
+        while a < len(attack_idx) or b < len(benign_idx):
+            if i % 3 == 0 and a < len(attack_idx):
+                yield df.loc[attack_idx[a]]
+                a += 1
+            elif b < len(benign_idx):
+                yield df.loc[benign_idx[b]]
+                b += 1
+            else:
+                break
+            i += 1
+
+
 def run_pipeline():
     print("🚀 AegisAI pipeline starting...")
     feature_cols = load_feature_names()
@@ -55,37 +83,20 @@ def run_pipeline():
     triage_agent = TriageAgent()
     expl_agent   = ExplanationAgent()
 
-    while True:
-        # Interleave attack and benign for realistic ~30% attack rate
-        df_attack   = df[df["is_attack"] == 1].sample(frac=1, random_state=processed)
-        df_benign   = df[df["is_attack"] == 0].sample(frac=1, random_state=processed)
+    for row in event_generator(df, feature_cols):
+        event = row_to_event(row, feature_cols)
+        event = pred_agent.run(event)
+        event = triage_agent.run(event)
+        event = expl_agent.run(event)
 
-        attack_list = df_attack.to_dict("records")
-        benign_list = df_benign.to_dict("records")
+        event_store.add(event)
+        processed += 1
 
-        interleaved = []
-        a, b = 0, 0
-        for i in range(len(df)):
-            if i % 3 == 0 and a < len(attack_list):
-                interleaved.append(attack_list[a]); a += 1
-            elif b < len(benign_list):
-                interleaved.append(benign_list[b]); b += 1
+        if processed % 100 == 0:
+            print(f"  [{processed}] Severity={event.severity} | Family={event.attack_family} | Score={event.risk_score:.3f}")
+            gc.collect()
 
-        df_shuffled = pd.DataFrame(interleaved)
-
-        for _, row in df_shuffled.iterrows():
-            event = row_to_event(row, feature_cols)
-            event = pred_agent.run(event)
-            event = triage_agent.run(event)
-            event = expl_agent.run(event)
-
-            event_store.add(event)
-            processed += 1
-
-            if processed % 100 == 0:
-                print(f"  [{processed}] Severity={event.severity} | Family={event.attack_family} | Score={event.risk_score:.3f}")
-
-            time.sleep(delay)
+        time.sleep(delay)
 
 
 if __name__ == "__main__":

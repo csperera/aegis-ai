@@ -25,7 +25,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-REFRESH_INTERVAL = 5
+REFRESH_INTERVAL = 15
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 from datetime import timezone

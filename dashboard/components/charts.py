@@ -77,7 +77,7 @@ def severity_trend(events: list[dict], window_minutes: int = 10) -> go.Figure:
         sub = df[df["severity"] == sev]
         if sub.empty:
             continue
-        resampled = sub.resample("30s").size().rename("count").reset_index()
+        resampled = sub.resample("10s").size().rename("count").reset_index()
         fig.add_trace(go.Scatter(
             x=resampled["ts"], y=resampled["count"],
             name=sev, line=dict(color=color, width=2),

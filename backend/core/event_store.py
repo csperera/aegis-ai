@@ -1,7 +1,3 @@
-"""
-In-memory event store. Holds the last N fully-enriched events
-so the Streamlit dashboard can poll without any message broker.
-"""
 from collections import deque
 from threading import Lock
 from typing import Optional
@@ -9,7 +5,7 @@ from backend.core.schema import ThreatEvent
 
 
 class EventStore:
-    def __init__(self, maxlen: int = 200):
+    def __init__(self, maxlen: int = 1000):
         self._store: deque[dict] = deque(maxlen=maxlen)
         self._lock = Lock()
 
@@ -31,4 +27,4 @@ class EventStore:
 
 
 # Module-level singleton — shared between pipeline and dashboard
-event_store = EventStore(maxlen=2000)
+event_store = EventStore(maxlen=1000)

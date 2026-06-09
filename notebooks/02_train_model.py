@@ -39,7 +39,6 @@ model = xgb.XGBClassifier(
     colsample_bytree=0.8,
     scale_pos_weight=scale_pos_weight,
     eval_metric="auc",
-    use_label_encoder=False,
     random_state=42,
     n_jobs=-1,
 )

@@ -158,6 +158,12 @@ aegis-ai/
 
 ---
 
-## 📄 License
+## 📄 Copyright
 
-MIT License — free to use, modify, and distribute.
+© 2026 Christian Perera. All rights reserved.
+
+This repository and its contents are the intellectual property of Christian Perera.
+No part of this codebase may be used, copied, modified, merged, published, distributed,
+sublicensed, or sold without explicit written permission from the author.
+
+For licensing inquiries: christianperera.ai@gmail.com

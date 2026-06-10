@@ -77,7 +77,7 @@ if filtered:
     display_cols = [c for c in display_cols if c in df.columns]
     st.dataframe(
     df[display_cols].style.format({"risk_score": "{:.4f}"}),
-    use_container_width=True,
+    width='stretch',
     height=350
     )
 else:

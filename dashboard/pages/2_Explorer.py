@@ -4,6 +4,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime
 import time
 
@@ -129,6 +130,36 @@ if source:
             st.markdown(f"- {t}")
     else:
         st.markdown("- No reasoning trace available")
+
+    # ── EXPORT TO THREATОРACLE ────────────────────────────────────────────────
+    st.divider()
+    st.markdown("**🔗 Escalate to ThreatOracle AI**")
+
+    export_payload = {
+        "event_id":        evt.get("event_id"),
+        "timestamp":       evt.get("timestamp"),
+        "src_ip":          evt.get("src_ip"),
+        "dst_ip":          evt.get("dst_ip"),
+        "src_port":        evt.get("src_port"),
+        "dst_port":        evt.get("dst_port"),
+        "protocol":        evt.get("protocol"),
+        "attack_family":   evt.get("attack_family"),
+        "severity":        evt.get("severity"),
+        "risk_score":      evt.get("risk_score"),
+        "triage_decision": evt.get("triage_decision"),
+        "analyst_summary": evt.get("analyst_summary"),
+        "recommended_action": evt.get("recommended_action"),
+    }
+
+    export_json = json.dumps(export_payload, indent=2)
+
+    st.code(export_json, language="json")
+
+    st.markdown(
+        "📋 Copy the JSON above and paste it into "
+        "[ThreatOracle AI](https://github.com/csperera/threat-oracle) "
+        "for ATT&CK diagnosis and D3FEND remediation."
+    )
 
 # ── AUTO REFRESH ──────────────────────────────────────────────────────────────
 time.sleep(REFRESH_INTERVAL)

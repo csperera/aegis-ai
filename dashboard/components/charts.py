@@ -2,6 +2,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 
+
 SEVERITY_COLORS = {
     "CRITICAL": "#FF2D2D",
     "HIGH":     "#FF8C00",
@@ -70,14 +71,17 @@ def severity_trend(events: list[dict], window_minutes: int = 10) -> go.Figure:
     df["ts"] = pd.to_datetime(df["timestamp"], errors="coerce")
     df = df.dropna(subset=["ts"])
     df = df.set_index("ts").sort_index()
-    df = df[df.index >= df.index.max() - pd.Timedelta(minutes=window_minutes)]
+
+    # Use wall clock now instead of max event time
+    now = pd.Timestamp.now()
+    df = df[df.index >= now - pd.Timedelta(minutes=window_minutes)]
 
     fig = go.Figure()
     for sev, color in SEVERITY_COLORS.items():
         sub = df[df["severity"] == sev]
         if sub.empty:
             continue
-        resampled = sub.resample("10s").size().rename("count").reset_index()
+        resampled = sub.resample("5s").size().rename("count").reset_index()
         fig.add_trace(go.Scatter(
             x=resampled["ts"], y=resampled["count"],
             name=sev, line=dict(color=color, width=2),

@@ -23,7 +23,7 @@
   ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
   │  STAGE 2 — PREDICTION AGENT                                                                              │
   │  ┌────────────────────────────────────────────────────────────────────────────────────────────────────┐  │
-  │  │  XGBoost Core Model  │  AUC: 0.9886 on imbalanced temporal data  │  scale_pos_weight class balance │  │
+  │  │  XGBoost Core Model  │  AUC: 0.9992 on imbalanced temporal data  │  scale_pos_weight class balance │  │
   │  └────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
   │  Outputs ──►  attack classification  │  risk_score (confidence 0–1)  │  is_suspicious flag               │
   └───────────────────────────────────────────────┬──────────────────────────────────────────────────────────┘

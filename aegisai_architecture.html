@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AegisAI — Architecture</title>
+<style>
+  body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+  svg { max-width: 900px; display: block; margin: 0 auto; background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+  .node { cursor: pointer; }
+  .node:hover rect { opacity: 0.85; }
+  #modal-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:100; }
+  #modal-box { background:white; max-width:580px; margin:60px auto; border-radius:10px; padding:28px 32px; position:relative; max-height:80vh; overflow-y:auto; }
+  #modal-title { font-size:15px; font-weight:600; color:#1a1a2e; margin-bottom:12px; }
+  #modal-body { font-size:13px; color:#333; line-height:1.7; white-space:pre-wrap; }
+  #modal-close { position:absolute; top:12px; right:16px; font-size:20px; cursor:pointer; color:#666; }
+</style>
+</head>
+<body>
+
+<div id="modal-overlay" onclick="closeModal()">
+  <div id="modal-box" onclick="event.stopPropagation()">
+    <span id="modal-close" onclick="closeModal()">✕</span>
+    <div id="modal-title"></div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+var info = {
+  stage1: {
+    title: "Stage 1 — Data Ingestion",
+    body: `IN: CICIDS2017 dataset — 2.83M labeled network flow events from the University of New Brunswick
+OUT: Normalized feature vectors serialized to Parquet, fed into streaming simulator
+
+How it works:
+CICIDS2017 contains labeled network traffic across seven attack categories:
+  DDoS — volumetric and application-layer floods
+  BruteForce — FTP-Patator, SSH-Patator credential attacks
+  PortScan — network reconnaissance and service discovery
+  Botnet — C2 communication and lateral movement
+  WebAttack — SQL injection, XSS, brute-force web auth
+  Infiltration — attacker with existing foothold, data exfiltration
+  Benign — normal traffic baseline
+
+Feature extraction pipeline:
+  30 highest-variance features selected from 80 available
+  StandardScaler normalization applied to all features
+  Attack family labels mapped from raw CICIDS2017 class names
+  Stratified 80/20 train/test split — preserves class distribution
+
+Temporal validation (critical):
+  Train set contains earlier time periods only
+  Test set contains later time periods only
+  No future data leaks into training — same discipline as quantitative finance backtesting
+  Without temporal split the model cheats — learns future attack patterns
+
+Output:
+  Parquet files written to disk — efficient columnar format for streaming
+  Streaming simulator reads Parquet row by row — simulates live network traffic
+  Each row becomes a ThreatEvent object passed to the Prediction Agent
+
+MITRE ATT&CK technique coverage:
+  T1110 — Brute Force (FTP-Patator, SSH-Patator)
+  T1046 — Network Service Discovery (PortScan)
+  T1498 — Network Denial of Service (DDoS family)
+  T1071 — Application Layer Protocol (Botnet, WebAttack)`
+  },
+  stage2: {
+    title: "Stage 2 — Prediction Agent",
+    body: `IN: ThreatEvent object with raw normalized feature vector from Stage 1
+OUT: ThreatEvent enriched with attack_classification, risk_score, is_suspicious flag
+
+How it works:
+XGBoost core model trained on CICIDS2017 feature vectors:
+  n_estimators: tuned via cross-validation
+  scale_pos_weight: handles severe class imbalance — benign traffic far outnumbers attacks
+  max_depth, learning_rate: hyperparameter tuned
+  AUC: 0.9992 on imbalanced temporal test set
+
+Why XGBoost and not neural networks:
+  Tabular data — network flow features are structured rows and columns, not images or text
+  Interpretability — tree-based models produce feature importance naturally
+  Performance on small-to-medium datasets — CICIDS2017 is millions of rows not billions
+  No GPU required — runs on standard CPU hardware
+
+Three outputs written to ThreatEvent:
+  attack_classification: predicted attack family (DDoS, BruteForce, PortScan, etc.)
+  risk_score: confidence 0.0 to 1.0 — probability of malicious classification
+  is_suspicious: boolean flag — True if risk_score exceeds base threshold
+
+The risk_score is the primary signal everything downstream uses.
+High score flows to CRITICAL severity. Low score flows to INFO or IGNORE.`
+  },
+  stage3: {
+    title: "Stage 3 — Triage Agent",
+    body: `IN: ThreatEvent with attack_classification and risk_score from Stage 2
+OUT: ThreatEvent enriched with severity, triage_decision, rules_triggered, attack_hypothesis
+
+How it works:
+Seven-rule engine runs against real CICIDS2017 feature names:
+
+R1 — HIGH FLOW RATE: Flow Bytes/s > 2.0 (scaled) — key DDoS indicator
+R2 — SENSITIVE PORT: dst_port in {22, 3389, 445, 21, 23, 3306, 5432} — admin service targeting
+R3 — ONE WAY TRAFFIC: Fwd IAT Total > 1.0 AND Bwd IAT Total == 0.0 — SYN flood or recon
+R4 — PACKET LENGTH ANOMALY: Packet Length Variance > 2.0 — payload anomaly
+R5 — LONG IDLE PERIODS: Idle Mean > 2.0 — beaconing or C2 communication
+R6 — SHORT FLOW DURATION: Flow Duration < -0.5 (scaled) — scan or flood
+R7 — LARGE BACKWARD PAYLOAD: Total Length of Bwd Packets > 2.0 — exfiltration indicator
+
+Severity mapping:
+  CRITICAL: risk >= 0.90 + DDoS/Botnet family
+  CRITICAL: risk >= 0.85 + BruteForce family
+  CRITICAL: 3+ rules triggered at HIGH
+  HIGH: risk >= 0.80 or BruteForce family
+  HIGH: R7 large backward payload at MEDIUM
+  MEDIUM: risk >= 0.60 or sensitive port bumped from LOW
+  LOW: risk >= 0.40
+  INFO: risk < 0.40
+
+Triage decision:
+  CRITICAL or HIGH → ESCALATE
+  MEDIUM → MONITOR
+  LOW or INFO → IGNORE
+
+Attack hypothesis generated per family:
+  "SSH brute-force credential attack against administrative service"
+  "Botnet C2 beaconing pattern — compromised host phoning home"
+  "Volumetric DDoS flood — high flow rate targeting service availability"
+  "Active port scanning detected — attacker mapping network topology"`
+  },
+  stage4: {
+    title: "Stage 4 — Explanation Agent",
+    body: `IN: ThreatEvent with severity and triage_decision from Stage 3
+OUT: ThreatEvent enriched with llm_explanation, recommended_action, reasoning_trace, analyst_summary, confidence
+
+How it works:
+Seven pre-built attack family templates — one per attack type:
+  DDoS, BruteForce, WebAttack, Botnet, Reconnaissance, Infiltration, Benign
+
+Each template contains three components:
+  explanation: plain English narrative of what happened and why it is dangerous
+  action: specific five-step SOC response plan
+  trace: bullet list of why the model flagged this event
+
+Runtime variables injected into templates:
+  {src_ip}, {dst_ip}, {src_port}, {dst_port}, {protocol}, {risk_score}, {attack_family}, {severity}
+
+Example — BruteForce explanation template:
+  "This event indicates a brute-force credential attack originating from {src_ip}
+   targeting port {dst_port} on {dst_ip}. The repeated connection attempts with a
+   risk score of {risk_score:.2f} suggest automated password spraying..."
+
+Example — BruteForce action template:
+  "1. Block source IP {src_ip} immediately and add to threat intelligence blocklist.
+   2. Enforce account lockout policy on targeted service at {dst_ip}:{dst_port}.
+   3. Review authentication logs for any successful logins from this source.
+   4. Enable MFA on all exposed administrative services.
+   5. Notify the asset owner of {dst_ip} and initiate credential rotation."
+
+Important V1 note:
+The field is named llm_explanation but V1 uses template-based generation, not a live LLM call.
+Templates produce consistent, fast, auditable explanations without API cost or latency.
+V2 upgrade: replace templates with live LLM call using SHAP values as context for
+more nuanced, dynamic explanations per event.`
+  },
+  stage5: {
+    title: "Stage 5 — Dashboard and Human-in-the-Loop",
+    body: `IN: Fully enriched ThreatEvent with all fields populated by Stages 1-4
+OUT: Analyst-reviewed decision + JSON output to downstream systems
+
+How it works — Streamlit SOC Console with three views:
+
+VIEW 1 — Real-Time Threat Feed:
+  Live streaming events as they are scored and triaged
+  Color-coded by severity: CRITICAL red, HIGH orange, MEDIUM yellow, LOW green
+  Threat trend chart — event volume over last 10 minutes
+  Immediate visual signal when something is wrong
+
+VIEW 2 — Event Explorer:
+  Filter by severity, attack family, time range
+  Search by IP address, port, or attack type
+  Sort by risk_score descending — highest priority first
+  Drill-down into any individual event for full detail
+
+VIEW 3 — Drill-Down Detail:
+  Full ThreatEvent fields displayed
+  analyst_summary, llm_explanation, recommended_action
+  reasoning_trace — why the model flagged this event
+  rules_triggered — which of the seven triage rules fired
+  Source IP, destination IP, port, protocol, confidence
+
+Human-in-the-loop:
+  Analyst can Accept — confirms classification, logs agreement
+  Analyst can Override — changes classification, logs correction
+  Analyst can Ignore — marks as false positive, logs for retraining
+
+Correction logging feeds continuous improvement:
+  All analyst overrides logged to correction store
+  Patterns in corrections inform prompt updates and rule refinements
+  Human correction rate is the primary quality signal
+
+JSON Output Interface:
+  ThreatEvent.to_dict() serializes complete enriched event to JSON
+  Downstream consumers: ThreatOracle AI, SIEM integrations, SOAR playbooks, custom APIs
+  Loosely coupled — any system that accepts JSON can consume AegisAI output`
+  },
+  mitre: {
+    title: "MITRE ATT&CK Technique Mappings",
+    body: `AegisAI covers four primary MITRE ATT&CK techniques from the CICIDS2017 dataset:
+
+T1110 — Brute Force
+Tactic: Credential Access
+CICIDS2017 classes: FTP-Patator, SSH-Patator
+Description: Automated credential attacks against administrative services.
+Attacker repeatedly tries username/password combinations until one succeeds.
+AegisAI detection: high connection attempt rate to single port, sensitive port targeting (R2)
+
+T1046 — Network Service Discovery
+Tactic: Discovery
+CICIDS2017 class: PortScan
+Description: Attacker systematically probes network to identify open ports and services.
+Reconnaissance precedes targeted exploitation — attacker maps the network before attacking.
+AegisAI detection: short flow duration (R6), one-way traffic (R3), high connection rate
+
+T1498 — Network Denial of Service
+Tactic: Impact
+CICIDS2017 classes: DDoS — LOIT, Hulk, GoldenEye, Slowloris, SlowHTTPTest
+Description: Volumetric and application-layer attacks to exhaust target resources.
+AegisAI detection: high flow rate (R1), short flow duration (R6), packet anomaly (R4)
+
+T1071 — Application Layer Protocol
+Tactic: Command and Control
+CICIDS2017 classes: Botnet, WebAttack
+Description: Adversaries communicate using standard application protocols (HTTP, HTTPS, DNS)
+to blend into normal traffic and evade detection.
+AegisAI detection: long idle periods (R5) for beaconing, large backward payload (R7) for exfil
+
+These four techniques are embedded in the ThreatEvent mitre_techniques field
+and passed downstream to ThreatOracle for full ATT&CK/D3FEND diagnostic mapping.`
+  },
+  json: {
+    title: "JSON Output Interface",
+    body: `AegisAI outputs a structured ThreatEvent JSON object consumed by downstream systems.
+This is the API contract between Component 1 (AegisAI) and Component 2 (ThreatOracle).
+
+Full ThreatEvent output schema:
+{
+  "event_id": "uuid",
+  "timestamp": "2026-06-27T08:15:00Z",
+  "src_ip": "192.168.1.45",
+  "dst_ip": "192.168.1.103",
+  "src_port": 54821,
+  "dst_port": 22,
+  "protocol": "TCP",
+  "risk_score": 0.97,
+  "severity": "CRITICAL",
+  "triage_decision": "ESCALATE",
+  "attack_family": "BruteForce",
+  "attack_hypothesis": "SSH brute-force credential attack against administrative service",
+  "confidence": 0.97,
+  "rules_triggered": ["R2_SENSITIVE_PORT_TARGET", "R6_SHORT_FLOW_DURATION"],
+  "analyst_summary": "BruteForce activity detected from 192.168.1.45 — ESCALATE",
+  "llm_explanation": "This event indicates a brute-force credential attack...",
+  "recommended_action": "1. Block source IP 192.168.1.45 immediately...",
+  "reasoning_trace": [
+    "High connection attempt rate to single destination port",
+    "Destination port 22 is a known administrative service target",
+    "Risk score 0.97 indicates high-confidence threat"
+  ],
+  "mitre_techniques": ["T1110", "T1046"]
+}
+
+Downstream consumers:
+  ThreatOracle AI — paste this JSON directly for ATT&CK/D3FEND diagnostic analysis
+  SIEM integrations — Splunk, Microsoft Sentinel, Chronicle
+  SOAR playbooks — automated response workflows
+  Custom APIs — any system accepting structured JSON
+
+Loosely coupled design:
+AegisAI does not know or care what consumes its output.
+ThreatOracle does not know or care where its input came from.
+The JSON contract between them is the only dependency.`
+  }
+};
+
+function showInfo(key) {
+  document.getElementById("modal-title").textContent = info[key].title;
+  document.getElementById("modal-body").textContent = info[key].body;
+  document.getElementById("modal-overlay").style.display = "block";
+}
+
+function closeModal() {
+  document.getElementById("modal-overlay").style.display = "none";
+}
+</script>
+
+<svg viewBox="0 0 680 1220" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>AegisAI — Autonomous SOC Augmentation Pipeline</title>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="#666" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<!-- Header -->
+<rect x="40" y="14" width="600" height="52" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text font-size="14" font-weight="500" fill="#3C3489" x="340" y="36" text-anchor="middle" dominant-baseline="central">AegisAI — Autonomous SOC Augmentation Pipeline</text>
+<text font-size="12" fill="#534AB7" x="340" y="54" text-anchor="middle" dominant-baseline="central">Component 1 of AI SOC Pipeline · Loosely Coupled · Live at aegisai.online</text>
+
+<!-- STAGE 1 -->
+<text font-size="12" fill="#555" x="40" y="88" dominant-baseline="central">Stage 1 — Data Ingestion</text>
+<g class="node" onclick="showInfo('stage1')">
+<rect x="40" y="100" width="600" height="66" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text font-size="14" font-weight="500" fill="#085041" x="340" y="122" text-anchor="middle" dominant-baseline="central">CICIDS2017 · 2.83M network flows · 30 features · Parquet streaming</text>
+<text font-size="12" fill="#0F6E56" x="340" y="140" text-anchor="middle" dominant-baseline="central">StandardScaler normalization · stratified 80/20 temporal split · streaming simulator</text>
+<text font-size="12" fill="#0F6E56" x="340" y="155" text-anchor="middle" dominant-baseline="central">T1110 · T1046 · T1498 · T1071 — four MITRE ATT&amp;CK technique categories covered</text>
+</g>
+
+<line x1="340" y1="166" x2="340" y2="188" stroke="#666" stroke-width="1" marker-end="url(#arrow)"/>
+<text font-size="10" fill="#888" x="348" y="180">ThreatEvent (raw features + metadata)</text>
+
+<!-- STAGE 2 -->
+<text font-size="12" fill="#555" x="40" y="200" dominant-baseline="central">Stage 2 — Prediction Agent</text>
+<g class="node" onclick="showInfo('stage2')">
+<rect x="40" y="212" width="600" height="66" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text font-size="14" font-weight="500" fill="#085041" x="340" y="234" text-anchor="middle" dominant-baseline="central">XGBoost core model · AUC 0.9992 · scale_pos_weight class balance</text>
+<text font-size="12" fill="#0F6E56" x="340" y="252" text-anchor="middle" dominant-baseline="central">Outputs: attack_classification · risk_score 0.0–1.0 · is_suspicious flag</text>
+<text font-size="12" fill="#0F6E56" x="340" y="267" text-anchor="middle" dominant-baseline="central">Tabular data · tree-based model · interpretable · no GPU required</text>
+</g>
+
+<line x1="340" y1="278" x2="340" y2="300" stroke="#666" stroke-width="1" marker-end="url(#arrow)"/>
+<text font-size="10" fill="#888" x="348" y="292">ThreatEvent + prediction fields</text>
+
+<!-- STAGE 3 -->
+<text font-size="12" fill="#555" x="40" y="312" dominant-baseline="central">Stage 3 — Triage Agent</text>
+<g class="node" onclick="showInfo('stage3')">
+<rect x="40" y="324" width="600" height="86" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text font-size="14" font-weight="500" fill="#3C3489" x="340" y="346" text-anchor="middle" dominant-baseline="central">Seven-rule engine on real CICIDS2017 feature names</text>
+<text font-size="12" fill="#534AB7" x="340" y="364" text-anchor="middle" dominant-baseline="central">R1 high flow rate · R2 sensitive port · R3 one-way traffic · R4 packet anomaly</text>
+<text font-size="12" fill="#534AB7" x="340" y="379" text-anchor="middle" dominant-baseline="central">R5 long idle · R6 short flow duration · R7 large backward payload</text>
+<text font-size="12" fill="#534AB7" x="340" y="394" text-anchor="middle" dominant-baseline="central">CRITICAL / HIGH → ESCALATE · MEDIUM → MONITOR · LOW / INFO → IGNORE</text>
+</g>
+
+<line x1="340" y1="410" x2="340" y2="432" stroke="#666" stroke-width="1" marker-end="url(#arrow)"/>
+<text font-size="10" fill="#888" x="348" y="424">ThreatEvent + severity + triage_decision</text>
+
+<!-- STAGE 4 -->
+<text font-size="12" fill="#555" x="40" y="444" dominant-baseline="central">Stage 4 — Explanation Agent</text>
+<g class="node" onclick="showInfo('stage4')">
+<rect x="40" y="456" width="600" height="76" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text font-size="14" font-weight="500" fill="#3C3489" x="340" y="478" text-anchor="middle" dominant-baseline="central">Seven pre-built attack family templates · runtime variable injection</text>
+<text font-size="12" fill="#534AB7" x="340" y="496" text-anchor="middle" dominant-baseline="central">DDoS · BruteForce · WebAttack · Botnet · Reconnaissance · Infiltration · Benign</text>
+<text font-size="12" fill="#534AB7" x="340" y="511" text-anchor="middle" dominant-baseline="central">Outputs: llm_explanation · recommended_action (5-step) · reasoning_trace · analyst_summary</text>
+<text font-size="12" fill="#534AB7" x="340" y="526" text-anchor="middle" dominant-baseline="central">V1: template-based · fast · auditable · V2: live LLM with SHAP values as context</text>
+</g>
+
+<line x1="340" y1="532" x2="340" y2="554" stroke="#666" stroke-width="1" marker-end="url(#arrow)"/>
+<text font-size="10" fill="#888" x="348" y="546">Fully enriched ThreatEvent</text>
+
+<!-- STAGE 5 -->
+<text font-size="12" fill="#555" x="40" y="566" dominant-baseline="central">Stage 5 — Dashboard and Human-in-the-Loop</text>
+<g class="node" onclick="showInfo('stage5')">
+<rect x="40" y="578" width="600" height="86" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text font-size="14" font-weight="500" fill="#0C447C" x="340" y="600" text-anchor="middle" dominant-baseline="central">Streamlit SOC Console — three views</text>
+<text font-size="12" fill="#185FA5" x="340" y="618" text-anchor="middle" dominant-baseline="central">Real-Time Threat Feed · Event Explorer (filter/sort/search) · Drill-Down Detail</text>
+<text font-size="12" fill="#185FA5" x="340" y="633" text-anchor="middle" dominant-baseline="central">Analyst: Accept / Override / Ignore — all decisions logged</text>
+<text font-size="12" fill="#185FA5" x="340" y="648" text-anchor="middle" dominant-baseline="central">Correction logging → continuous improvement · human correction rate = primary quality signal</text>
+</g>
+
+<line x1="340" y1="664" x2="340" y2="686" stroke="#666" stroke-width="1" marker-end="url(#arrow)"/>
+
+<!-- JSON OUTPUT -->
+<text font-size="12" fill="#555" x="40" y="698" dominant-baseline="central">JSON Output Interface — downstream consumers</text>
+<g class="node" onclick="showInfo('json')">
+<rect x="40" y="710" width="600" height="66" rx="6" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text font-size="14" font-weight="500" fill="#2C2C2A" x="340" y="732" text-anchor="middle" dominant-baseline="central">ThreatEvent.to_dict() → structured JSON for downstream systems</text>
+<text font-size="12" fill="#5F5E5A" x="340" y="750" text-anchor="middle" dominant-baseline="central">risk_score · severity · triage_decision · attack_family · mitre_techniques · recommended_action</text>
+<text font-size="12" fill="#5F5E5A" x="340" y="765" text-anchor="middle" dominant-baseline="central">ThreatOracle AI · SIEM (Splunk, Sentinel) · SOAR playbooks · custom APIs</text>
+</g>
+
+<!-- MITRE -->
+<text font-size="12" fill="#555" x="40" y="796" dominant-baseline="central">MITRE ATT&amp;CK Technique Coverage</text>
+<g class="node" onclick="showInfo('mitre')">
+<rect x="40" y="808" width="600" height="86" rx="6" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
+<text font-size="13" font-weight="500" fill="#712B13" x="340" y="830" text-anchor="middle" dominant-baseline="central">T1110 Brute Force · T1046 Network Service Discovery</text>
+<text font-size="13" font-weight="500" fill="#712B13" x="340" y="848" text-anchor="middle" dominant-baseline="central">T1498 Network Denial of Service · T1071 Application Layer Protocol</text>
+<text font-size="11" fill="#993C1D" x="340" y="866" text-anchor="middle" dominant-baseline="central">Embedded in ThreatEvent.mitre_techniques — passed downstream to ThreatOracle for ATT&amp;CK/D3FEND mapping</text>
+<text font-size="11" fill="#993C1D" x="340" y="881" text-anchor="middle" dominant-baseline="central">Click to see full technique descriptions and detection logic</text>
+</g>
+
+<!-- Tech stack -->
+<rect x="40" y="914" width="600" height="54" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text font-size="13" font-weight="500" fill="#0C447C" x="340" y="932" text-anchor="middle" dominant-baseline="central">Tech Stack</text>
+<text font-size="11" fill="#185FA5" x="340" y="950" text-anchor="middle" dominant-baseline="central">Python · XGBoost · Scikit-learn · Pandas · NumPy · Streamlit · Plotly</text>
+<text font-size="11" fill="#185FA5" x="340" y="965" text-anchor="middle" dominant-baseline="central">CICIDS2017 dataset · Parquet · custom multi-agent pipeline · Render deployment</text>
+
+<!-- Pipeline summary -->
+<rect x="40" y="984" width="600" height="44" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text font-size="12" font-weight="500" fill="#085041" x="340" y="1001" text-anchor="middle" dominant-baseline="central">Pipeline: CICIDS2017 → Stage 1 (ingest) → Stage 2 (predict) → Stage 3 (triage)</text>
+<text font-size="12" fill="#0F6E56" x="340" y="1018" text-anchor="middle" dominant-baseline="central">→ Stage 4 (explain) → Stage 5 (dashboard + HITL) → JSON output</text>
+
+<!-- Footer -->
+<text font-size="11" fill="#888" x="340" y="1058" text-anchor="middle">Component 1 of AI SOC Pipeline — outputs structured JSON to any downstream intelligence layer</text>
+<text font-size="11" fill="#888" x="340" y="1074" text-anchor="middle">Loosely coupled — ThreatOracle, SIEM, SOAR, or any JSON consumer</text>
+<text font-size="11" fill="#888" x="340" y="1090" text-anchor="middle">Click any stage to learn more · aegisai.online</text>
+
+</svg>
+</body>
+</html>

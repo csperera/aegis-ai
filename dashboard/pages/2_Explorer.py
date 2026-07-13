@@ -38,7 +38,7 @@ with col_status:
     st.markdown(f"🟢 **Live** | `{now}`")
 
 # ── FETCH EVENTS ──────────────────────────────────────────────────────────────
-events = event_store.get_recent(200)
+events = event_store.get_recent(500)
 
 if not events:
     st.info("⏳ Waiting for events from the pipeline...")

@@ -73,8 +73,10 @@ def severity_trend(events: list[dict], window_minutes: int = 10) -> go.Figure:
     df = df.set_index("ts").sort_index()
 
     # Use wall clock now instead of max event time
-    now = pd.Timestamp.now(tz='UTC').replace(tzinfo=None)
-    df = df[df.index >= now - pd.Timedelta(minutes=window_minutes)]
+    latest = df.index.max()
+    earliest = df.index.min()
+    if (latest - earliest).total_seconds() > 30:
+        df = df[df.index >= latest - pd.Timedelta(minutes=window_minutes)]
 
     fig = go.Figure()
     for sev, color in SEVERITY_COLORS.items():

@@ -27,7 +27,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-REFRESH_INTERVAL = 5
+REFRESH_INTERVAL = 30
 
 
 def start_pipeline():
